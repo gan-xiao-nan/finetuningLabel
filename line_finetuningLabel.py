@@ -1,3 +1,4 @@
+
 import cv2
 import os
 import numpy as np
@@ -6,7 +7,7 @@ import statistics
 from statistics import mode
 import shutil
 
-def getBBlist(imgpath):
+def getBBlist(imgpath,mode = 'cropped'):
     pre,ext = os.path.splitext(imgpath)
     txtpath = pre +'.txt'
     _,filename = os.path.split(txtpath)
@@ -15,13 +16,14 @@ def getBBlist(imgpath):
     with open(txtpath, 'r') as f:
         content = f.read()
         lines = content.split('\n')
-        del lines[-1]       #last row is a '\n', so delete it
-        for i,line in enumerate(lines):
-            line = line.split(',')
-            coor = [x_min,y_min,x_max,y_maxd] = list(map(int,line[0:4]))
-            coor.append(int(line[-1]))
-            coors.append(coor)
-        f.close()
+        # print('lines = ',lines)
+        if mode == 'ori':
+            del lines[-1]       #last row is a '\n', so delete it, since cropped image do not have '\n' last, no need delete
+    for i,line in enumerate(lines):
+        line = line.split(',')
+        coor = [x_min,y_min,x_max,y_maxd] = list(map(int,line[0:4]))
+        coor.append(int(line[-1]))
+        coors.append(coor)
     return coors # coors = [[x_min,y_min,x_max,y_max,id0],[x_min,y_min,x_max,y_max,id1],...] 
                     
 
@@ -47,7 +49,7 @@ def cropROI(imgpath,des_path,margin=0):
     image = cv2.imread(imgpath)
     width = image.shape[1]
     height = image.shape[0]
-    coors = getBBlist(imgpath)
+    coors = getBBlist(imgpath,mode = 'ori')
     pre,post = os.path.split(imgpath)
     name,ext = os.path.splitext(post)
 
@@ -65,6 +67,10 @@ def cropROI(imgpath,des_path,margin=0):
         small_image = image[y_min:y_max,x_min:x_max]
 
         cv2.imwrite(filename,small_image)
+        txt_filename = os.path.join(des_path,name+'_id_'+str(id)+'.txt') 
+        with open(txt_filename,'w') as f:
+            f.write(f"{x_min},{y_min},{x_max},{y_max},PAD,{id}")
+            print('id=',id)
 
 def kmean(image,k=2,max_H = 0):
     #https://www.thepythoncode.com/article/kmeans-for-image-segmentation-opencv-python#:~:text=Advertise-,How%20to%20Use%20K%2DMeans%20Clustering%20for%20Image%20Segmentation%20using,easier%20and%20more%20meaningful%20image.
@@ -305,13 +311,11 @@ def verifyCircle(imgpath):
     else:
         maxRadius = int(height/2+5)
         minRadius = int(height/3)
-    print('width,height = ',width,height)
     cimage = cv2.cvtColor(image,cv2.COLOR_GRAY2BGR)
 
 
     circles = cv2.HoughCircles(image,cv2.HOUGH_GRADIENT,1,20,
                                 param1=50,param2=12,minRadius=minRadius,maxRadius=maxRadius)
-    print(type(circles))
 
     try:
         circles = np.uint16(np.around(circles))
@@ -321,9 +325,11 @@ def verifyCircle(imgpath):
             # draw the center of the circle
             cv2.circle(cimage,(i[0],i[1]),2,(0,0,255),-1)
             is_Circle=True
+            # print('circle')
+
         return cimage,is_Circle
     except:
-        print('no circle')
+        # print('square')
         is_Circle = False
         return image,is_Circle
 
@@ -331,34 +337,28 @@ def verifyCircle(imgpath):
     if key==27:
         cv2.destroyAllWindows()
 
-# img_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_2crop\27.jpg'
-# filename = '35.jpg'
-# image = cv2.imread(img_path)
-# gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-# _, bw_image = cv2. threshold(gray,127,255,cv2.THRESH_BINARY_INV)
-# # print(bw_image.shape)
-# # for row in bw_image:
-# #     print(row)
-# hor_lines,ver_lines = createLines(image,num_line=20)
-# print('how many line',len(hor_lines),len(ver_lines))
-# leftWhites,rightWhites,topWhites,bottomWhites,ver_dict,hor_dict = findFirstWhite(bw_image,hor_lines,ver_lines,direction='outward')
-# print(ver_dict,hor_dict)
-# print(len(leftWhites),len(rightWhites),len(topWhites),len(bottomWhites))
-# print('left: ',leftWhites)
-# print('right: ',rightWhites)
-# print('top: ',topWhites)
-# print('bottom: ',bottomWhites)
-# x_min,y_min,x_max,y_max = determineBB(image,leftWhites,rightWhites,topWhites,bottomWhites,direction='outward')
-# output = np.zeros_like(image)
-# output[:,:,0] = bw_image
-# output[:,:,1] = bw_image
-# output[:,:,2] = bw_image
-# drawBoxAndLine(output,hor_lines,ver_lines,x_min,y_min,x_max,y_max)
-# cv2.imwrite(r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\4.jpg',output)
-# cv2.imshow(r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\4.jpg',output)
-# key = cv2.waitKey(0)
-# if key == 27:         # wait for ESC key to exit
-#     cv2.destroyAllWindows()
+def newBBCoor(small,big,r_top,r_left):
+    [x_min,y_min,x_max,y_max] = small
+    [x_min_bb,y_min_bb,x_max_bb,y_max_bb] = big
+    width_bb = x_max_bb - x_min_bb 
+    height_bb = y_max_bb - y_min_bb
+    x_min_new = width_bb - (x_max_bb - x_min) + r_left
+    y_min_new = height_bb - (y_max_bb - y_min) + r_top
+    x_max_new = width_bb - (x_max_bb - x_max) + r_left
+    y_max_new = height_bb - (y_max_bb - y_max) + r_top
+    return [x_min_new,y_min_new,x_max_new,y_max_new]    
+
+def writeBBlist(filename,coor_single_cropped_img):
+    pre,ext = os.path.splitext(filename)
+    txtpath = pre +'.txt'
+    print(txtpath)
+    with open(txtpath, 'w') as f:
+        for bb_coor in coor_single_cropped_img:
+            for coor in bb_coor:
+                f.write(str(coor))
+                f.write(',')
+            f.write('PAD')
+            f.write('\n')
 
 ##################################### Cropped #############################################
 
@@ -386,7 +386,11 @@ def verifyCircle(imgpath):
 #         path,filename = os.path.split(img_path)
 #         output_path = os.path.join(des_folder_path,filename)
 #         cv2.imwrite(output_path,threshed[1])
-       
+#         name,ext = os.path.splitext(filename)
+#         src_txt_filename = os.path.join(img_folder_path,name+'.txt') 
+#         des_txt_filename = os.path.join(des_folder_path,name+'.txt') 
+#         shutil.copy(src_txt_filename,des_txt_filename)
+    
 ################################# Verify Circle################################################
 
 # img_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\binarized'
@@ -396,14 +400,24 @@ def verifyCircle(imgpath):
 #     if filename.endswith('.jpg'):
 #         img_path = os.path.join(img_folder_path,filename)
 #         cimage,is_Circle = verifyCircle(img_path)
+#         # print('filename = ',filename)
 #         if is_Circle is True:
 #             path,filename = os.path.split(img_path)
 #             output_path = os.path.join(circle_folder_path,filename)
 #             cv2.imwrite(output_path,cimage)
-#         else:
+#             name,ext = os.path.splitext(filename)
+#             src_txt_filename = os.path.join(img_folder_path,name+'.txt') 
+#             des_txt_filename = os.path.join(circle_folder_path,name+'.txt') 
+#             shutil.copy(src_txt_filename,des_txt_filename)
+#             # print('cicle here')
+#         elif is_Circle is False:
 #             path,filename = os.path.split(img_path)
 #             output_path = os.path.join(polygon_folder_path,filename)
 #             cv2.imwrite(output_path,cimage)
+#             name,ext = os.path.splitext(filename)
+#             src_txt_filename = os.path.join(img_folder_path,name+'.txt') 
+#             des_txt_filename = os.path.join(polygon_folder_path,name+'.txt') 
+#             shutil.copy(src_txt_filename,des_txt_filename)
 
 # #################################### _2 crop ###################################################
 
@@ -428,6 +442,22 @@ def verifyCircle(imgpath):
 #         output_path = os.path.join(des_folder_path,filename)
 #         cv2.imwrite(output_path,image)
 
+#         width = image.shape[1]
+#         height = image.shape[0]
+#         coors = [[x_min_ori,y_min_ori,x_max_ori,y_max_ori,id]] = getBBlist(img_path) # coors = [[x_min,y_min,x_max,y_max,id0],[x_min,y_min,x_max,y_max,id1],...]
+#         x_min_new = x_min_ori + x_min
+#         y_min_new = y_min_ori + y_min
+#         x_max_new = x_max_ori - (width-x_max)
+#         y_max_new = y_max_ori - (height-y_max)
+
+#         name,ext = os.path.splitext(filename)
+#         src_txt_filename = os.path.join(img_folder_path,name+'.txt') 
+#         des_txt_filename = os.path.join(des_folder_path,name+'.txt') 
+#         content_new = f"{x_min_new},{y_min_new},{x_max_new},{y_max_new},PAD,{id}"
+#         with open(des_txt_filename,'w') as f:
+#             f.write(content_new)
+
+
 ##################################### _2 crop_no_label ###################################################
 
 # img_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\polygon'
@@ -446,23 +476,119 @@ def verifyCircle(imgpath):
 #         path,filename = os.path.split(img_path)
 #         output_path = os.path.join(des_folder_path,filename)
 #         cv2.imwrite(output_path,output)
+        
+#         width = image.shape[1]
+#         height = image.shape[0]
+#         coors = [[x_min_ori,y_min_ori,x_max_ori,y_max_ori,id]] = getBBlist(img_path) # coors = [[x_min,y_min,x_max,y_max,id0],[x_min,y_min,x_max,y_max,id1],...]
+#         x_min_new = x_min_ori + x_min
+#         y_min_new = y_min_ori + y_min
+#         x_max_new = x_max_ori - (width-x_max)
+#         y_max_new = y_max_ori - (height-y_max)
+
+#         name,ext = os.path.splitext(filename)
+#         src_txt_filename = os.path.join(img_folder_path,name+'.txt') 
+#         des_txt_filename = os.path.join(des_folder_path,name+'.txt') 
+#         content_new = f"{x_min_new},{y_min_new},{x_max_new},{y_max_new},PAD,{id}"
+#         with open(des_txt_filename,'w') as f:
+#             f.write(content_new)
       
 ################################### Convolution ################################################
 
-img_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_2crop_lineAlgo_no_label'
-des_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_3crop_convAlgo_from_lineAlgo'
-count = 0
-for filename in os.listdir(img_folder_path):
+# img_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_2crop_lineAlgo_no_label'
+# des_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_3crop_convAlgo_from_lineAlgo'
+# count = 0
+# for filename in os.listdir(img_folder_path):
+#     if filename.endswith('.jpg'):
+#         if count < 100000000:
+#             print('filename = ',filename)
+#             img_path = os.path.join(img_folder_path,filename)
+#             image = cv2.imread(img_path)
+#             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+#             _, bw_image = cv2.threshold(gray,127,255,cv2.THRESH_BINARY)
+#             x_min,y_min,x_max,y_max = conv_filter(bw_image)
+#             print(x_min,y_min,x_max,y_max)
+#             cv2.rectangle(image, (x_min,y_min), (x_max,y_max), (0,0,255), 1 )
+#             output_path = os.path.join(des_folder_path,filename)
+#             cv2.imwrite(output_path,image)
+#             count+= 1
+
+#             width = image.shape[1]
+#             height = image.shape[0]
+#             coors = [[x_min_ori,y_min_ori,x_max_ori,y_max_ori,id]] = getBBlist(img_path) # coors = [[x_min,y_min,x_max,y_max,id0],[x_min,y_min,x_max,y_max,id1],...]
+#             x_min_new = x_min_ori + x_min
+#             y_min_new = y_min_ori + y_min
+#             x_max_new = x_max_ori - (width-x_max)
+#             y_max_new = y_max_ori - (height-y_max)
+
+#             width = image.shape[1]
+#             height = image.shape[0]
+#             coors = [[x_min_ori,y_min_ori,x_max_ori,y_max_ori,id]] = getBBlist(img_path) # coors = [[x_min,y_min,x_max,y_max,id0],[x_min,y_min,x_max,y_max,id1],...]
+#             x_min_new = x_min_ori + x_min
+#             y_min_new = y_min_ori + y_min
+#             x_max_new = x_max_ori - (width-x_max)
+#             y_max_new = y_max_ori - (height-y_max)
+
+#             name,ext = os.path.splitext(filename)
+#             src_txt_filename = os.path.join(img_folder_path,name+'.txt') 
+#             des_txt_filename = os.path.join(des_folder_path,name+'.txt') 
+#             content_new = f"{x_min_new},{y_min_new},{x_max_new},{y_max_new},PAD,{id}"
+#             with open(des_txt_filename,'w') as f:
+#                 f.write(content_new)
+
+#####################################################################################NO LABEL
+# img_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\polygon'
+# des_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_2crop_lineAlgo'
+# for filename in os.listdir(img_folder_path):
+#     if filename.endswith('.jpg'):
+#         print('filename = ',filename)
+#         img_path = os.path.join(img_folder_path,filename)
+#         image = cv2.imread(img_path)
+#         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+#         _, bw_image = cv2.threshold(gray,127,255,cv2.THRESH_BINARY)
+#         hor_lines,ver_lines = createLines(image,num_line=20)
+#         leftWhites,rightWhites,topWhites,bottomWhites,ver_dict,hor_dict = findFirstWhite(bw_image,hor_lines,ver_lines)
+#         x_min,y_min,x_max,y_max = determineBB(image,leftWhites,rightWhites,topWhites,bottomWhites)
+#         output = np.zeros_like(image)
+#         output[:,:,0] = bw_image
+#         output[:,:,1] = bw_image
+#         output[:,:,2] = bw_image
+#         drawBoxAndLine(image,hor_lines,ver_lines,x_min,y_min,x_max,y_max)
+#         path,filename = os.path.split(img_path)
+#         output_path = os.path.join(des_folder_path,filename)
+#         cv2.imwrite(output_path,image)
+
+################################## Combine txt file #############################################
+
+# src_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\_3crop_convAlgo_from_lineAlgo'
+# des_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\convOut'
+# previousName = 'previousName'
+# for filename in os.listdir(src_folder_path):
+#     if filename.endswith('.txt'):
+#         [name,id] = filename.split('_id_')
+#         previousFileName = os.path.join(src_folder_path,filename)
+#         currentFileName = os.path.join(des_folder_path,name+'.txt')
+#         with open(previousFileName,'r') as f:
+#             content = f.read()
+
+#         with open(currentFileName,'a+') as f:
+#             f.write(content+'\n')
+#         f.close()
+
+##################################### Try result ##############################################
+
+src_folder_path = r'C:\Users\xiao-nan.gan\internProject\finetuningLabel\myTest\oriOut'
+for filename in os.listdir(src_folder_path):
     if filename.endswith('.jpg'):
-        if count < 100000000:
-            print('filename = ',filename)
-            img_path = os.path.join(img_folder_path,filename)
-            image = cv2.imread(img_path)
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            _, bw_image = cv2.threshold(gray,127,255,cv2.THRESH_BINARY)
-            x_min,y_min,x_max,y_max = conv_filter(bw_image)
-            print(x_min,y_min,x_max,y_max)
-            cv2.rectangle(image, (x_min,y_min), (x_max,y_max), (0,0,255), 1 )
-            output_path = os.path.join(des_folder_path,filename)
-            cv2.imwrite(output_path,image)
-            count+= 1
+        imgpath = os.path.join(src_folder_path,filename)
+        image = cv2.imread(imgpath)
+        coors = getBBlist(imgpath,mode = 'ori')
+        for coor in coors:
+            print(coor)
+            [x_min,y_min,x_max,y_max,id] = coor
+            cv2.rectangle(image, (x_min,y_min), (x_max,y_max), (0,255,0), 1 )
+            cv2.imwrite(os.path.join(src_folder_path,filename),image)
+
+
+
+                
+
